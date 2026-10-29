@@ -8,6 +8,10 @@ if (!process.argv.includes("--yes")) {
   process.exit(1);
 }
 const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
+if (!url) {
+  console.error("DATABASE_URL is not set");
+  process.exit(1);
+}
 const client = new pg.Client({ connectionString: url });
 await client.connect();
 await client.query("TRUNCATE claims, policies, sessions, login_failures RESTART IDENTITY");

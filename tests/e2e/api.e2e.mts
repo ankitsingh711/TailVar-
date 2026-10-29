@@ -6,12 +6,18 @@ import assert from "node:assert/strict";
 const BASE = (process.env.BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const results = { passed: 0, failed: 0 };
 
-class Client {
-  cookie = null;
-  lastSetCookie = null;
+interface Res {
+  status: number;
+  data: any;
+  headers: Headers;
+}
 
-  async req(method, path, body, headers = {}) {
-    const h = { ...headers };
+class Client {
+  cookie: string | null = null;
+  lastSetCookie: string | null = null;
+
+  async req(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res> {
+    const h: Record<string, string> = { ...headers };
     if (this.cookie) h.cookie = this.cookie;
     if (body !== undefined && !h["content-type"]) h["content-type"] = "application/json";
     const res = await fetch(BASE + path, {
@@ -27,35 +33,36 @@ class Client {
       this.cookie = pair.endsWith("=") ? null : pair;
     }
     const text = await res.text();
-    let data = null;
+    let data: any = null;
     try {
       data = JSON.parse(text);
     } catch {}
     return { status: res.status, data, headers: res.headers };
   }
 
-  get = (p) => this.req("GET", p);
-  post = (p, b, h) => this.req("POST", p, b, h);
+  get = (p: string) => this.req("GET", p);
+  post = (p: string, b?: unknown, h?: Record<string, string>) => this.req("POST", p, b, h);
 
-  async login(username, password) {
+  async login(username: string, password: string) {
     const r = await this.post("/api/auth/login", { username, password });
     assert.equal(r.status, 200, `login ${username}: ${JSON.stringify(r.data)}`);
     return r;
   }
 }
 
-async function test(name, fn) {
+async function test(name: string, fn: () => Promise<void>) {
   try {
     await fn();
     results.passed++;
     console.log(`  ✓ ${name}`);
-  } catch (err) {
+  } catch (e) {
+    const err = e as Error;
     results.failed++;
     console.log(`  ✗ ${name}\n      ${err.message.split("\n").join("\n      ")}`);
   }
 }
 
-const expectStatus = (r, status, label = "") =>
+const expectStatus = (r: Res, status: number, label = "") =>
   assert.equal(r.status, status, `${label} expected ${status}, got ${r.status}: ${JSON.stringify(r.data)}`);
 
 console.log(`API end-to-end tests against ${BASE}\n`);
@@ -64,7 +71,7 @@ const anon = new Client();
 const admin = new Client();
 const c1 = new Client();
 const c2 = new Client();
-let customers, p1, p2, firstClaim, secondClaim;
+let customers: Record<string, number>, p1: any, p2: any, firstClaim: any, secondClaim: any;
 
 await test("health check reports database connectivity", async () => {
   expectStatus(await anon.get("/api/health"), 200);
@@ -100,9 +107,9 @@ await test("demo accounts log in; session cookie is HttpOnly + SameSite=Lax", as
   await c1.login("customer1", "Customer1@Demo26");
   const r = await c2.login("customer2", "Customer2@Demo26");
   assert.equal(r.data.user.role, "customer");
-  assert.match(c2.lastSetCookie, /HttpOnly/i);
-  assert.match(c2.lastSetCookie, /SameSite=Lax/i);
-  if (BASE.startsWith("https://")) assert.match(c2.lastSetCookie, /Secure/i);
+  assert.match(c2.lastSetCookie ?? "", /HttpOnly/i);
+  assert.match(c2.lastSetCookie ?? "", /SameSite=Lax/i);
+  if (BASE.startsWith("https://")) assert.match(c2.lastSetCookie ?? "", /Secure/i);
   assert.equal((await admin.get("/api/me")).data.user.role, "admin");
 });
 
@@ -136,13 +143,13 @@ await test("CSRF protections: foreign Origin and non-JSON bodies are refused", a
 await test("admin lists exactly the two demo customers", async () => {
   const r = await admin.get("/api/customers");
   expectStatus(r, 200);
-  customers = Object.fromEntries(r.data.customers.map((c) => [c.username, c.id]));
+  customers = Object.fromEntries(r.data.customers.map((c: any) => [c.username, c.id]));
   assert.deepEqual(Object.keys(customers).sort(), ["customer1", "customer2"]);
 });
 
 await test("policy validation: bad dates, non-positive SI, bad customer", async () => {
   const base = { customerId: customers.customer1, startDate: "2026-01-01", endDate: "2026-12-31", sumInsured: "1000" };
-  const cases = [
+  const cases: [Record<string, unknown>, number][] = [
     [{ endDate: "2025-12-31" }, 400],
     [{ sumInsured: "0" }, 400],
     [{ sumInsured: -5 }, 400],
@@ -180,15 +187,15 @@ await test("admin creates policies for both customers", async () => {
 
 await test("data isolation: customer2 cannot see or claim against customer1's policy", async () => {
   const list = await c2.get("/api/policies");
-  assert.ok(list.data.policies.every((p) => p.customerUsername === "customer2"));
-  assert.ok(!list.data.policies.some((p) => p.id === p1.id));
+  assert.ok(list.data.policies.every((p: any) => p.customerUsername === "customer2"));
+  assert.ok(!list.data.policies.some((p: any) => p.id === p1.id));
   expectStatus(await c2.get(`/api/policies/${p1.id}`), 404);
   expectStatus(await c2.post("/api/claims", { policyId: p1.id, incidentDate: "2026-03-01", amount: "10" }), 404);
   expectStatus(await c1.get(`/api/policies/${p1.id}`), 200);
 });
 
 await test("claim validation: incident outside coverage, non-positive amounts, unknown policy", async () => {
-  const cases = [
+  const cases: [Record<string, unknown>, number][] = [
     [{ incidentDate: "2025-12-31" }, 422],
     [{ incidentDate: "2027-01-01" }, 422],
     [{ amount: "0" }, 400],
@@ -235,13 +242,13 @@ await test("the 5L claim is now accepted; approving it keeps SI consumed", async
 
 await test("customer sees updated statuses on next retrieval; other customer cannot", async () => {
   const mine = (await c1.get("/api/claims")).data.claims;
-  const byId = Object.fromEntries(mine.map((c) => [c.id, c.status]));
+  const byId = Object.fromEntries(mine.map((c: any) => [c.id, c.status]));
   assert.equal(byId[firstClaim.id], "Rejected");
   assert.equal(byId[secondClaim.id], "Approved");
   expectStatus(await c2.get(`/api/claims/${secondClaim.id}`), 404);
-  assert.ok((await c2.get("/api/claims")).data.claims.every((c) => c.customerUsername === "customer2"));
+  assert.ok((await c2.get("/api/claims")).data.claims.every((c: any) => c.customerUsername === "customer2"));
   const all = (await admin.get("/api/claims")).data.claims;
-  assert.ok(all.some((c) => c.id === secondClaim.id && c.customerUsername === "customer1"));
+  assert.ok(all.some((c: any) => c.id === secondClaim.id && c.customerUsername === "customer1"));
 });
 
 await test("decision validation: bad decision value and unknown claim", async () => {

@@ -11,11 +11,12 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "db:migrate": "node scripts/migrate.mjs",
-    "db:reset-data": "node scripts/reset-data.mjs",
+    "db:migrate": "node scripts/migrate.mts",
+    "db:reset-data": "node scripts/reset-data.mts",
     "test": "vitest run",
-    "test:api": "node tests/e2e/api.e2e.mjs",
-    "test:ui": "playwright test"
+    "test:api": "node tests/e2e/api.e2e.mts",
+    "test:ui": "playwright test",
+    "package": "node scripts/package-submission.mts"
   },
   "dependencies": {
     "@vercel/functions": "^3.10.5",

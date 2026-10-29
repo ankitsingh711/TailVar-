@@ -2,6 +2,7 @@
 // the schema is idempotent and existing users are left untouched.
 //   DATABASE_URL=... npm run db:migrate
 import { readFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import pg from "pg";
 import bcrypt from "bcryptjs";
 
@@ -12,7 +13,7 @@ const DEMO_USERS = [
   { username: "admin", password: "Admin@Demo26", role: "admin", displayName: "Administrator" },
 ];
 
-export async function migrate(connectionString) {
+export async function migrate(connectionString: string): Promise<void> {
   const client = new pg.Client({ connectionString });
   await client.connect();
   try {
@@ -37,7 +38,7 @@ export async function migrate(connectionString) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
   if (!url) {
     console.error("DATABASE_URL is not set");
@@ -45,7 +46,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   migrate(url)
     .then(() => console.log("Migration complete; demo users present."))
-    .catch((err) => {
+    .catch((err: Error) => {
       console.error("Migration failed:", err.message);
       process.exit(1);
     });
